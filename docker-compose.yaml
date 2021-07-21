@@ -4,14 +4,15 @@ version: '3.1'
 volumes:
     prometheus1_data: {}
     prometheus2_data: {}
-    prometheus3_data: {}
-    prometheus4_data: {}
     grafana_data: {}
     minio_data: {}
 
 services:
     prometheus-1:
         image: prom/prometheus:v2.28.1
+        deploy:
+            placement:
+              constraints: [node.hostname == prom_ha1]
         volumes:
             - ./prometheus/:/etc/prometheus/
             - prometheus1_data:/prometheus
@@ -34,6 +35,9 @@ services:
 
     prometheus-2:
         image: prom/prometheus:v2.28.1
+        deploy:
+            placement:
+              constraints: [node.hostname == prom_ha2]
         volumes:
             - ./prometheus/:/etc/prometheus/
             - prometheus2_data:/prometheus
@@ -54,52 +58,11 @@ services:
             - cadvisor
         restart: always
 
-    prometheus-3:
-        image: prom/prometheus:v2.28.1
-        volumes:
-            - ./prometheus/:/etc/prometheus/
-            - prometheus3_data:/prometheus
-        command:
-            - '--config.file=/etc/prometheus/prometheus3.yaml'
-            - '--storage.tsdb.path=/prometheus'
-            - '--storage.tsdb.max-block-duration=30m'
-            - '--storage.tsdb.min-block-duration=30m'
-            - '--web.enable-lifecycle'
-            - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-            - '--web.console.templates=/usr/share/prometheus/consoles'
-        ports:
-            - 9083:9090
-        links:
-            - cadvisor:cadvisor
-            - alertmanager:alertmanager
-        depends_on:
-            - cadvisor
-        restart: always
-
-    prometheus-4:
-        image: prom/prometheus:v2.28.1
-        volumes:
-            - ./prometheus/:/etc/prometheus/
-            - prometheus4_data:/prometheus
-        command:
-            - '--config.file=/etc/prometheus/prometheus4.yaml'
-            - '--storage.tsdb.path=/prometheus'
-            - '--storage.tsdb.max-block-duration=30m'
-            - '--storage.tsdb.min-block-duration=30m'
-            - '--web.enable-lifecycle'
-            - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-            - '--web.console.templates=/usr/share/prometheus/consoles'
-        ports:
-            - 9084:9090
-        links:
-            - cadvisor:cadvisor
-            - alertmanager:alertmanager
-        depends_on:
-            - cadvisor
-        restart: always
-
     thanos-sidecar-1:
         image: quay.io/thanos/thanos:v0.21.1
+        deploy:
+            placement:
+              constraints: [node.hostname == prom_ha1]
         volumes:
             - ./thanos/:/etc/thanos/
             - prometheus1_data:/prometheus
@@ -117,6 +80,9 @@ services:
 
     thanos-sidecar-2:
         image: quay.io/thanos/thanos:v0.21.1
+        deploy:
+            placement:
+              constraints: [node.hostname == prom_ha2]
         volumes:
             - ./thanos/:/etc/thanos/
             - prometheus2_data:/prometheus
@@ -132,42 +98,10 @@ services:
             - minio
         restart: always
 
-    thanos-sidecar-3:
-        image: quay.io/thanos/thanos:v0.21.1
-        volumes:
-            - ./thanos/:/etc/thanos/
-            - prometheus3_data:/prometheus
-        command:
-            - 'sidecar'
-            - '--tsdb.path=/prometheus'
-            - '--prometheus.url=http://prometheus-3:9090'
-            - '--grpc-address=0.0.0.0:10091'
-            - '--http-address=0.0.0.0:10902'
-            - '--objstore.config-file=/etc/thanos/bucket_config.yaml'
-        depends_on:
-            - prometheus-3
-            - minio
-        restart: always
-
-    thanos-sidecar-4:
-        image: quay.io/thanos/thanos:v0.21.1
-        volumes:
-            - ./thanos/:/etc/thanos/
-            - prometheus4_data:/prometheus
-        command:
-            - 'sidecar'
-            - '--tsdb.path=/prometheus'
-            - '--prometheus.url=http://prometheus-4:9090'
-            - '--grpc-address=0.0.0.0:10091'
-            - '--http-address=0.0.0.0:10902'
-            - '--objstore.config-file=/etc/thanos/bucket_config.yaml'
-        depends_on:
-            - prometheus-4
-            - minio
-        restart: always
-
     thanos-query-frontend:
         image: quay.io/thanos/thanos:v0.21.1
+        deploy:
+            mode: global
         command:
             - 'query-frontend'
             - '--http-address=0.0.0.0:10901'
@@ -180,6 +114,8 @@ services:
 
     thanos-querier:
         image: quay.io/thanos/thanos:v0.21.1
+        deploy:
+            mode: global
         command:
             - 'query'
             - '--grpc-address=0.0.0.0:10091'
@@ -187,20 +123,18 @@ services:
             - '--query.replica-label=replica'
             - '--store=thanos-sidecar-1:10091'
             - '--store=thanos-sidecar-2:10091'
-            - '--store=thanos-sidecar-3:10091'
-            - '--store=thanos-sidecar-4:10091'
             - '--store=thanos-store-gateway:10091'
         ports:
             - 10902:10902
         depends_on:
             - thanos-sidecar-1
             - thanos-sidecar-2
-            - thanos-sidecar-3
-            - thanos-sidecar-4
         restart: always
 
     thanos-store-gateway:
         image: quay.io/thanos/thanos:v0.21.1
+        deploy:
+            mode: global
         volumes:
             - ./thanos/:/etc/thanos/
         command:
@@ -215,6 +149,8 @@ services:
 
     thanos-compactor:
         image: quay.io/thanos/thanos:v0.21.1
+        deploy:
+            mode: global
         volumes:
             - ./thanos/:/etc/thanos/
         command:
@@ -229,6 +165,8 @@ services:
 
     thanos-ruler:
         image: quay.io/thanos/thanos:v0.21.1
+        deploy:
+            mode: global
         volumes:
             - ./thanos/:/etc/thanos/
         command:
@@ -253,6 +191,8 @@ services:
 
     thanos-bucket-web:
         image: quay.io/thanos/thanos:v0.21.1
+        deploy:
+            mode: global
         volumes:
             - ./thanos/:/etc/thanos/
         command:
@@ -273,6 +213,8 @@ services:
 
     minio:
         image: minio/minio:RELEASE.2020-05-01T22-19-14Z
+        deploy:
+            mode: global
         volumes:
             - minio_data:/data
         entrypoint: sh
